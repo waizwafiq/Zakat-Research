@@ -8,12 +8,6 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 
 from models.base import BaseClusterModel
-from models.kmeans import KMeansModel
-from models.hierarchical import HierarchicalModel
-from models.dbscan import DBSCANModel
-from models.gaussian_mixture import GaussianMixtureModel
-from models.optics import OPTICSModel
-from models.spectral import SpectralModel
 
 
 @dataclass
@@ -78,9 +72,11 @@ class ModelRunner:
             if 'kmeans' in model.name.lower(): readable_name = 'K-Means' # Fallback normalization
             if 'hierarchical' in model.name.lower(): readable_name = 'Hierarchical'
             if 'dbscan' in model.name.lower(): readable_name = 'DBSCAN'
-            if 'gaussian' in model.name.lower(): readable_name = 'GMM'
+            if 'gaussian' in model.name.lower() and 'bayesian' not in model.name.lower(): readable_name = 'GMM'
             if 'optics' in model.name.lower(): readable_name = 'OPTICS'
             if 'spectral' in model.name.lower(): readable_name = 'Spectral'
+            if 'affinity' in model.name.lower(): readable_name = 'Affinity Propagation'
+            if 'bayesian' in model.name.lower(): readable_name = 'Bayesian GMM'
 
             return ExperimentResult(
                 model_name=readable_name,
@@ -206,9 +202,25 @@ def create_experiment_configs(
             min_samples = dbscan_min_samples_range or [5, 10]
             for ms in min_samples:
                 configs.append({
-                    'model': 'optics', 
+                    'model': 'optics',
                     'min_samples': ms,
                     'metric': 'minkowski'
+                })
+
+        elif model == 'affinity_propagation':
+            # Affinity Propagation with different damping values
+            for damping in [0.5, 0.7, 0.9]:
+                configs.append({
+                    'model': 'affinity_propagation',
+                    'damping': damping
+                })
+
+        elif model == 'bayesian_gmm':
+            # Bayesian GMM with different upper bounds
+            for n_comp in k_range:
+                configs.append({
+                    'model': 'bayesian_gmm',
+                    'n_components': n_comp
                 })
 
     return configs

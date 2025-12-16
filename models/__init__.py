@@ -12,6 +12,8 @@ from models.dbscan import DBSCANModel
 from models.gaussian_mixture import GaussianMixtureModel
 from models.optics import OPTICSModel
 from models.spectral import SpectralModel
+from models.affinity_propagation import AffinityPropagationModel
+from models.bayesian_gmm import BayesianGMMModel
 from models.runner import ModelRunner, ExperimentResult, create_experiment_configs
 
 # Model registry for easy access
@@ -21,7 +23,9 @@ MODEL_REGISTRY = {
     'dbscan': DBSCANModel,
     'gaussian_mixture': GaussianMixtureModel,
     'optics': OPTICSModel,
-    'spectral': SpectralModel
+    'spectral': SpectralModel,
+    'affinity_propagation': AffinityPropagationModel,
+    'bayesian_gmm': BayesianGMMModel
 }
 
 # Display names for UI
@@ -31,7 +35,9 @@ MODEL_NAMES = {
     'dbscan': 'DBSCAN',
     'gaussian_mixture': 'Gaussian Mixture (GMM)',
     'optics': 'OPTICS (Density)',
-    'spectral': 'Spectral Clustering (Graph)'
+    'spectral': 'Spectral Clustering (Graph)',
+    'affinity_propagation': 'Affinity Propagation',
+    'bayesian_gmm': 'Bayesian GMM (Variational)'
 }
 
 
@@ -40,7 +46,8 @@ def get_model(name: str) -> BaseClusterModel:
     Factory function to get a model instance by name.
 
     Args:
-        name: Model key ('kmeans', 'hierarchical', 'dbscan', 'gaussian_mixture', 'optics', 'spectral')
+        name: Model key ('kmeans', 'hierarchical', 'dbscan', 'gaussian_mixture',
+              'optics', 'spectral', 'affinity_propagation', 'bayesian_gmm')
 
     Returns:
         Instance of the requested model
@@ -63,6 +70,8 @@ __all__ = [
     'GaussianMixtureModel',
     'OPTICSModel',
     'SpectralModel',
+    'AffinityPropagationModel',
+    'BayesianGMMModel',
     'ModelRunner',
     'ExperimentResult',
     'create_experiment_configs',
