@@ -44,6 +44,8 @@ if 'meta' not in st.session_state:
     st.session_state.meta = None
 if 'experiment_results' not in st.session_state:
     st.session_state.experiment_results = None
+if 'experiment_results_df' not in st.session_state:
+    st.session_state.experiment_results_df = None
 if 'current_labels' not in st.session_state:
     st.session_state.current_labels = None
 
@@ -462,27 +464,34 @@ elif section == "🔬 Clustering":
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
-                def update_progress(current, total):
-                    progress_bar.progress(current / total)
-                    status_text.text(f"Running experiment {current}/{total}")
-
                 # Run experiments
-                runner = ModelRunner()
-                results = runner.run_batch(X_scaled, configs, update_progress)
+                runner = ModelRunner(df)
+
+                # Run batch and get results DataFrame
+                total_configs = len(configs)
+                results_df = pd.DataFrame()
+
+                for i, config in enumerate(configs):
+                    status_text.text(f"Running experiment {i + 1}/{total_configs}")
+                    progress_bar.progress((i + 1) / total_configs)
+
+                    # Run single config as a batch of 1
+                    single_result = runner.run_batch(X_scaled, [config.copy()])
+                    results_df = pd.concat([results_df, single_result], ignore_index=True)
 
                 progress_bar.empty()
                 status_text.empty()
 
                 # Store results
                 st.session_state.experiment_results = runner
+                st.session_state.experiment_results_df = results_df
 
-                st.success(f"Completed {len(results)} experiments!")
+                st.success(f"Completed {len(results_df)} experiments!")
 
                 # Show summary
-                results_df = runner.get_results_dataframe()
-                valid_count = results_df['Valid'].sum()
+                valid_count = results_df['Valid'].sum() if 'Valid' in results_df.columns else len(results_df)
 
-                st.metric("Valid Results", f"{valid_count}/{len(results)}")
+                st.metric("Valid Results", f"{valid_count}/{len(results_df)}")
 
                 # Best results preview
                 st.subheader("Top 5 Results (by Silhouette)")
@@ -498,12 +507,11 @@ elif section == "🔬 Clustering":
     elif page == "Results Comparison":
         st.title("Results Comparison")
 
-        if st.session_state.experiment_results is None:
+        if 'experiment_results_df' not in st.session_state or st.session_state.experiment_results_df is None:
             st.warning("No experiment results yet. Run a batch experiment first.")
             st.stop()
 
-        runner = st.session_state.experiment_results
-        results_df = runner.get_results_dataframe()
+        results_df = st.session_state.experiment_results_df
 
         # Filters
         col1, col2, col3 = st.columns(3)
@@ -605,27 +613,30 @@ elif section == "🔬 Clustering":
     elif page == "Visualization":
         st.title("Cluster Visualization")
 
-        if st.session_state.current_labels is None and st.session_state.experiment_results is None:
+        has_single = st.session_state.current_labels is not None
+        has_batch = st.session_state.experiment_results is not None
+
+        if not has_single and not has_batch:
             st.warning("No clustering results yet. Run a model first.")
             st.stop()
 
         # Select which result to visualize
+        options = []
+        if has_single:
+            options.append("Last Single Model")
+        if has_batch:
+            options.append("Best from Batch")
+
         source = st.radio(
             "Visualize",
-            ["Last Single Model", "Best from Batch"],
+            options,
             horizontal=True
         )
 
         if source == "Last Single Model":
-            if st.session_state.current_labels is None:
-                st.warning("Run a single model first.")
-                st.stop()
             labels = st.session_state.current_labels
         else:
-            if st.session_state.experiment_results is None:
-                st.warning("Run a batch experiment first.")
-                st.stop()
-            best = st.session_state.experiment_results.get_best_result('silhouette')
+            best = st.session_state.experiment_results.get_best_model('Silhouette')
             if best is None:
                 st.warning("No valid results found.")
                 st.stop()
