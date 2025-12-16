@@ -1,5 +1,5 @@
 """
-PySPSS - Python-based SPSS Alternative
+ZE-Workbench - Data Analysis & Machine Learning Platform
 Main Streamlit Application
 
 A modular data analysis and machine learning platform with
@@ -29,7 +29,7 @@ from models import (
 # PAGE CONFIG
 # =============================================================================
 st.set_page_config(
-    page_title="PySPSS | Data Analysis & ML",
+    page_title="ZE-Workbench | Data Analysis & ML",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -52,7 +52,7 @@ if 'current_labels' not in st.session_state:
 # =============================================================================
 # SIDEBAR - NAVIGATION & FILE UPLOAD
 # =============================================================================
-st.sidebar.title("📊 PySPSS")
+st.sidebar.title("📊 ZE-Workbench")
 st.sidebar.caption("Data Analysis & Machine Learning Platform")
 st.sidebar.divider()
 
@@ -60,7 +60,7 @@ st.sidebar.divider()
 uploaded_file = st.sidebar.file_uploader(
     "Upload Data",
     type=['csv', 'sav'],
-    help="Supported formats: CSV, SPSS (.sav)"
+    help="Supported formats: CSV, SAV (.sav)"
 )
 
 if uploaded_file:
@@ -110,12 +110,12 @@ else:
 if st.session_state.data is None:
     # Welcome Screen
     st.markdown("""
-    # Welcome to PySPSS
+    # Welcome to ZE-Workbench
 
-    A Python-based alternative to SPSS for data analysis and machine learning.
+    A data analysis and machine learning platform for clustering experiments.
 
     ### Features
-    - **Data Editor**: View and edit your data with SPSS-style variable view
+    - **Data Editor**: View and edit your data with variable metadata view
     - **Statistical Analysis**: Descriptive stats, correlations, t-tests, crosstabs
     - **Clustering**: K-Means, Hierarchical, DBSCAN, Gaussian Mixture
     - **Batch Experiments**: Run all models with multiple parameters at once
@@ -715,4 +715,4 @@ elif section == "🔬 Clustering":
 # FOOTER
 # =============================================================================
 st.sidebar.divider()
-st.sidebar.caption("PySPSS v2.0 | Modular Clustering")
+st.sidebar.caption("ZE-Workbench v2.0 | Modular Clustering")

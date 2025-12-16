@@ -1,4 +1,4 @@
-"""Utility modules for PySPSS."""
+"""Utility modules for ZE-Workbench."""
 
 from .data_loader import load_file, download_df, get_variable_metadata
 from .preprocessing import preprocess_features, encode_categorical, scale_features

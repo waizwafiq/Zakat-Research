@@ -1,4 +1,4 @@
-"""Data loading utilities for PySPSS."""
+"""Data loading utilities for ZE-Workbench."""
 
 import pandas as pd
 import tempfile
@@ -59,7 +59,7 @@ def download_df(df):
 
 def get_variable_metadata(df, meta=None):
     """
-    Generate a 'Variable View' dataframe similar to SPSS.
+    Generate a 'Variable View' dataframe with column metadata.
 
     Args:
         df: pandas DataFrame

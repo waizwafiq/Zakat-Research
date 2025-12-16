@@ -1,5 +1,5 @@
 """
-Clustering models package for PySPSS.
+Clustering models package for ZE-Workbench.
 
 This package provides a modular, extensible framework for clustering analysis.
 Each model follows a consistent interface defined by BaseClusterModel.
