@@ -203,15 +203,24 @@ def silhouette_with_precomputed(X, labels, metric='jaccard'):
 # =============================================================================
 if phase == "Overview":
     st.title("MPI PhD-Level Clustering Analysis")
-    st.caption("Rigorous Experimental Design for Binary Deprivation Data")
+    st.caption("Rigorous Experimental Design for Zakat Eligibility Assessment")
 
     st.markdown("""
     ---
-    ### Research Context
+    ### Research Context: Why This Matters for Zakat
 
-    This analysis addresses the challenge of clustering **Multidimensional Poverty Index (MPI)** data,
-    which consists of binary deprivation indicators. Standard geometric clustering (K-Means with
-    Euclidean distance) is **mathematically invalid** for such data because:
+    Since we are dealing with **Zakat eligibility**, the stakes are incredibly high. We are not just
+    optimizing a business metric; we are trying to mathematically ensure justice (*'Adl*) in distribution.
+    If our model is wrong, a deserving family might be excluded, or funds might be misallocated.
+
+    Because of this, standard "out-of-the-box" approaches like **K-Means are dangerous here**. We need
+    methods that respect the specific nature of our data (binary "Yes/No" checklists) and the
+    **Maqasid Syariah** framework embedded in our variables.
+
+    ---
+    ### Why Standard Clustering Fails
+
+    Standard geometric clustering (K-Means with Euclidean distance) is **mathematically invalid** for this data:
 
     1. The "mean" of a binary vector is interpretable only as a probability, not a centroid location
     2. Euclidean distance suffers from the curse of dimensionality in sparse binary spaces
@@ -225,33 +234,53 @@ if phase == "Overview":
 
     with col1:
         st.markdown("""
-        #### Phase 1: Data Audit
-        - Reconstruct binary matrix X
+        #### Phase 1: The "Digital Checklist"
+        - Represent households as Deprivation Vectors
         - Tetrachoric correlation analysis
         - Feature group segregation
         - Redundancy identification
 
-        #### Phase 2: Distance Metrics
+        #### Phase 2: Measuring Similarity
+        - Jaccard Distance (asymmetric - ignores shared non-poverty)
         - Hamming Distance (symmetric)
-        - Jaccard Dissimilarity (asymmetric)
-        - Gower's Coefficient
-        - Metric benchmarking
+        - Focus on shared *problems*, not shared wealth
         """)
 
     with col2:
         st.markdown("""
-        #### Phase 3: Experimental Models
-        - **Model A**: K-Modes (Partitional)
-        - **Model B**: Latent Class Analysis (Probabilistic)
+        #### Phase 3: Finding Hidden Groups
+        - **Model A**: K-Modes (interpretable archetypes)
+        - **Model B**: LCA (probability of membership)
         - **Model C**: Hierarchical + MCA
-        - **Model D**: Spectral Clustering
 
-        #### Phase 4: Validation
+        #### Phase 4: The 'Adl Check
         - Bootstrap Stability (ARI)
         - External Validation (Cramer's V)
-        - Model Comparison (BIC/AIC)
-        - MPI Profile Heatmaps
+        - Maqasid Syariah Profiling
+        - Tailored intervention recommendations
         """)
+
+    # Summary table
+    st.divider()
+    st.subheader("Summary: Why Each Approach Was Chosen")
+
+    summary_data = pd.DataFrame({
+        'Approach': [
+            'Binary Vectors',
+            'Jaccard Distance',
+            'Latent Class Analysis',
+            'K-Modes (not K-Means)',
+            'Maqasid Profiling'
+        ],
+        'Why We Chose It for Zakat': [
+            'Because poverty is a checklist of specific lacks, not a single average number.',
+            'Because we care about shared *problems*, not shared wealth.',
+            'Because it handles uncertainty and tells us the *probability* of a family being in a specific poverty category.',
+            'Because K-Means gives "0.5 toilets" - physically impossible. K-Modes gives interpretable archetypes.',
+            'To ensure the Zakat type (Cash vs. Education vs. Housing) matches the actual deficit.'
+        ]
+    })
+    st.dataframe(summary_data, use_container_width=True, hide_index=True)
 
     st.divider()
 
@@ -311,12 +340,29 @@ elif phase == "Phase 1: Data Audit":
 
     # -------------------------------------------------------------------------
     if audit_section == "1.1 Binary Matrix":
-        st.subheader("1.1 Binary Matrix Reconstruction")
+        st.subheader("1.1 The 'Digital Checklist' - Binary Matrix Reconstruction")
 
         st.info("""
-        **Objective:** Reconstruct the matrix X where each element represents the
-        deprivation status of a household on a specific indicator.
+        **What is a Deprivation Vector?**
+
+        Our dataset contains variables like Income < PGK, No Waste Collection, and Preservation of Intellect.
+        These are **Binary Variables**. A household either *is* deprived (1) or *is not* deprived (0).
+
+        We represent every household as a "Deprivation Vector":
+        - **Household A:** `[1, 0, 1, ...]` (Poor Income, Good Toilet, No Internet...)
         """)
+
+        with st.expander("Why not just average these into a single Poverty Score?", expanded=False):
+            st.warning("""
+            **The Trap:** You might be tempted to average these 0s and 1s to get a "Poverty Score" immediately.
+
+            **The Risk:** If Family X lacks **Food** but has a **Phone**, and Family Y has **Food** but no **Phone**,
+            their "average score" might be the same. But for Zakat, Family X (starving) is critically different
+            from Family Y (disconnected).
+
+            **The Fix:** We keep the data as *vectors* (patterns) rather than smashing them into a single
+            average score too early. This preserves the *type* of poverty.
+            """)
 
         # Show binary matrix preview
         st.markdown("#### Binary Deprivation Matrix Preview")
@@ -483,8 +529,8 @@ elif phase == "Phase 1: Data Audit":
 # PHASE 2: DISTANCE METRICS
 # =============================================================================
 elif phase == "Phase 2: Distance Metrics":
-    st.title("Phase 2: Defining Similarity in Discrete Space")
-    st.caption("Benchmarking distance metrics for binary poverty data")
+    st.title("Phase 2: Measuring Similarity - The 'Symptom' Match")
+    st.caption("Why Jaccard Distance is critical for Zakat eligibility")
 
     # Get binary data
     binary_cols = [col for col in ALL_INDICATORS if col in df.columns]
@@ -492,9 +538,95 @@ elif phase == "Phase 2: Distance Metrics":
     X_array = X_binary.values.astype(float)
 
     st.info("""
-    **Core Insight:** Two households are "close" if they share specific patterns of deprivation.
-    The choice of distance metric fundamentally affects cluster interpretation.
+    **Core Insight:** To cluster people, we have to measure how "close" Household A is to Household B.
+    For Zakat, we don't care about clustering the non-poor. We care about the **presence of deprivation**.
     """)
+
+    # Educational example - Hospital Triage Analogy
+    with st.expander("The Hospital Triage Analogy - Why We Ignore the Non-Poor", expanded=True):
+        st.markdown("""
+        This is a crucial concept in **Unbalanced Data Analytics**. We use an analogy from emergency
+        medicine, which shares the same "triage" philosophy as Zakat distribution.
+
+        ---
+
+        **Imagine running a busy hospital emergency room:**
+
+        - **Patient A** is healthy. No fever, no broken bones, no pain.
+        - **Patient B** is also healthy. No fever, no broken bones, no pain.
+        - **Patient C** has a broken leg.
+        - **Patient D** has a heart attack.
+
+        If we use a standard clustering algorithm that treats "Health" and "Sickness" as equally important,
+        the computer would look at Patient A and Patient B and say:
+
+        > *"Wow! Patient A and Patient B are 100% identical! They match on every single symptom (having none).
+        > This is the strongest cluster in the dataset!"*
+
+        **Why is this useless?**
+
+        Because the hospital's goal is not to identify healthy people. We don't need a "Cluster of Healthy People"
+        to assign a doctor to. We need to distinguish Patient C (Orthopedics) from Patient D (Cardiology).
+
+        **In Zakat, the "Non-Poor" are the healthy patients.** If we treat "Not Poor" (0) as a similarity trait,
+        our algorithm will spend most of its energy discovering that rich people are rich, which is a waste of
+        time and distorts the math.
+        """)
+
+    # Mathematical explanation
+    with st.expander("The Mathematical Explanation - The 'Sparse Data' Problem", expanded=False):
+        st.markdown("""
+        Let's look at the actual math of why this happens using hypothetical households:
+
+        - **Household Rich 1:** `[0, 0, 0, 0, 0]` (No deprivations)
+        - **Household Rich 2:** `[0, 0, 0, 0, 0]` (No deprivations)
+        - **Household Poor A:** `[1, 1, 0, 0, 0]` (Lacks Food, Lacks Income)
+        - **Household Poor B:** `[0, 0, 1, 1, 0]` (Lacks Education, Lacks Internet)
+
+        ---
+
+        #### Scenario 1: Using "Symmetric" Similarity (Standard Approach)
+
+        This approach counts **everything** that matches, whether it's a 1 or a 0.
+
+        - **Rich 1 vs. Rich 2:** They match on 5 out of 5 items. **100% Similarity.**
+        - **Poor A vs. Poor B:** They match on 1 item (the last zero). **20% Similarity.**
+
+        **Result:** The algorithm sees the Rich households as the most "important" and "tight" cluster.
+        The Poor households look like noise because they are different from each other.
+        The model essentially says, *"I found a huge group of people who are fine!"*
+
+        ---
+
+        #### Scenario 2: Using "Asymmetric" Similarity (Jaccard Approach)
+
+        This approach **ignores** the 0-0 matches. It asks: *"Out of the problems they HAVE, how many do they SHARE?"*
+
+        - **Rich 1 vs. Rich 2:** They have 0 problems. They share 0 problems. **Undefined/Irrelevant.** The algorithm ignores them.
+        - **Poor A vs. Poor B:** They have distinct problems. The algorithm sees them as **distinct types of poverty**.
+
+        **Result:** The algorithm forces itself to look *only* at the people with 1s (Deprivation).
+        It ignores the massive "background noise" of the non-poor.
+
+        ---
+
+        #### The Zakat Implication
+
+        If we don't ignore the non-poor (the 0-0 matches), two risks emerge:
+
+        1. **The "Average" Problem:** The sheer number of non-poor people (zeros) will drown out the signal
+           of the poor. The algorithm might group a "Hardcore Poor" family and a "Near Poor" family into one
+           big "Generally Poor" cluster just because they are both "Not Rich," missing the nuance that one
+           needs food and the other needs a laptop.
+
+        2. **Resource Allocation:** Zakat is about **specificity**. We need to know *why* someone is poor.
+           - If they are in a cluster defined by `Income=1`, they get cash (*Fakir/Miskin*).
+           - If they are in a cluster defined by `Debt=1`, they get debt relief (*Al-Gharimin*).
+           - If they are in a cluster defined by `Education=0` (Not deprived), we shouldn't waste scholarship funds on them.
+
+        By "not caring about the non-poor," we are mathematically forcing the model to zoom in strictly on the
+        **deficits**, ensuring that every cluster we generate represents a specific **need** that Zakat can solve.
+        """)
 
     # Distance metric explanations
     col1, col2, col3 = st.columns(3)
@@ -531,6 +663,92 @@ elif phase == "Phase 2: Distance Metrics":
         **Use case:** When emphasizing commonality over total presence.
         """)
         st.latex(r"d_D(x_i, x_k) = 1 - \frac{2|M_{11}|}{2|M_{11}| + |M_{01}| + |M_{10}|}")
+
+    # Detailed Jaccard explanation
+    with st.expander("Deep Dive: Why Jaccard is Critical for Our Analysis", expanded=False):
+        st.markdown("""
+        This is the most critical mathematical concept in our entire research design.
+        If this point is misunderstood, the whole clustering experiment will fail to produce useful Zakat categories.
+
+        ---
+
+        ### 1. The Data Definition (The Trap)
+
+        In our dataset, the variables are coded like this:
+
+        - **0 = "Okay"** (Has toilet, has income, has food).
+        - **1 = "Deprived"** (No toilet, no income, no food).
+
+        In a normal dataset (like clustering flowers or customers), "0" and "1" are just two different colors.
+        Being "Blue" (0) is just as important as being "Red" (1).
+
+        **But in poverty data, "0" is essentially "Nothing to see here."**
+
+        - A "0" means the family is fine in that area.
+        - A "1" means the family has a problem.
+
+        ---
+
+        ### 2. The "0-0 Match" (The False Positive)
+
+        When we say Jaccard **"ignores the 0-0 matches,"** we mean this scenario:
+
+        Imagine two wealthy families, **Family A** and **Family B**.
+
+        - **Family A:** Has Income (0), Has Toilet (0), Has Food (0), Has Internet (0). -> `[0, 0, 0, 0]`
+        - **Family B:** Has Income (0), Has Toilet (0), Has Food (0), Has Internet (0). -> `[0, 0, 0, 0]`
+
+        If we use a standard algorithm (like Euclidean distance or Simple Matching), it calculates:
+
+        > *"Wow! Family A and Family B match on 4 out of 4 items! They are 100% identical!
+        > This is the strongest cluster in the universe!"*
+
+        **The Problem:** We have just successfully clustered people who **do not need Zakat**.
+        The algorithm is wasting its energy finding similarities between people who are fine.
+        This "0-0 match" (matching on *not* having a problem) dominates the data because most people
+        are usually not deprived in everything.
+
+        ---
+
+        ### 3. The "1-1 Match" (The Signal)
+
+        When we say Jaccard **"focuses strictly on the 1-1 matches (shared suffering),"** we mean this:
+
+        Imagine two struggling families, **Family X** and **Family Y**.
+
+        - **Family X:** No Income (1), Has Toilet (0), No Food (1), Has Internet (0).
+        - **Family Y:** No Income (1), Has Toilet (0), No Food (1), Has Internet (0).
+
+        **Jaccard Distance** looks at this and says:
+
+        > *"I see they both have Zeros (toilets/internet) - I will IGNORE that. I don't care about what they have.*
+        > *I see they both have Ones (No Income/No Food) - I will COUNT that.*
+        > *Conclusion: These families are identical because they share the same specific pain."*
+
+        ---
+
+        ### 4. The "Specific Needs" (The Zakat Application)
+
+        If we didn't use Jaccard, we might get a cluster called **"The Generally Poor."**
+
+        - It would include people who lack Food (`1`) and people who lack Education (`1`) mixed together,
+          simply because they are "Not Rich" (they don't have `0`s everywhere).
+
+        By using Jaccard, we force the math to only group people if they match on the **specific problem**:
+
+        - **Cluster A:** Everyone here matches because they all have `1` on **Income**. -> *Remedy: Cash Zakat.*
+        - **Cluster B:** Everyone here matches because they all have `1` on **Education**. -> *Remedy: Scholarship Zakat.*
+
+        ---
+
+        ### Summary
+
+        - **Standard Math:** "You are both similar because you both own shoes." (Useless for Zakat).
+        - **Jaccard Math:** "You are both similar because you both have a broken leg." (Useful for Zakat).
+
+        **We use Jaccard because Zakat is a hospital for society; we classify patients by their injuries,
+        not by the organs that are healthy.**
+        """)
 
     st.divider()
 
@@ -625,8 +843,8 @@ elif phase == "Phase 2: Distance Metrics":
 # PHASE 3: CLUSTERING MODELS
 # =============================================================================
 elif phase == "Phase 3: Clustering Models":
-    st.title("Phase 3: Experimental Clustering Models")
-    st.caption("Comparing partitional, probabilistic, and hierarchical approaches")
+    st.title("Phase 3: Finding the Hidden Groups")
+    st.caption("Discovering 'Profiles of Poverty' using appropriate algorithms")
 
     # Get binary data
     binary_cols = [col for col in ALL_INDICATORS if col in df.columns]
@@ -643,14 +861,30 @@ elif phase == "Phase 3: Clustering Models":
 
     # -------------------------------------------------------------------------
     if model_tab == "A. K-Modes":
-        st.subheader("Model A: K-Modes Clustering")
+        st.subheader("Model A: K-Modes Clustering (Not K-Means!)")
 
         st.info("""
-        **K-Modes** is the categorical analogue of K-Means. It uses:
-        - Mode (most frequent value) instead of mean for centroids
-        - Matching distance or Jaccard distance instead of Euclidean
-        - Frequency-based centroid updates
+        **K-Modes** is a hard partitioning algorithm designed for categorical data.
+        It calculates the **Mode** (the most frequent answer) instead of the mean.
         """)
+
+        with st.expander("Why NOT K-Means?", expanded=True):
+            st.warning("""
+            **K-Means calculates the "Centroid" (average) of a cluster.**
+
+            **Example:** If Cluster 1 has 100 families, and 50 have a toilet and 50 don't,
+            the "Average Family" has **0.5 toilets**.
+
+            **The Problem:** "0.5 toilets" is physically impossible. It makes the cluster center uninterpretable.
+
+            ---
+
+            **Why K-Modes?**
+            - It calculates the **Mode** (the most frequent answer).
+            - If most families in Cluster 1 lack education, the "Center" of Cluster 1 will simply be "Lacks Education."
+            - This creates **real, interpretable archetypes**: *"This is the cluster of families who live in cities
+              but have no education."*
+            """)
 
         col1, col2 = st.columns([1, 2])
 
@@ -726,16 +960,36 @@ elif phase == "Phase 3: Clustering Models":
 
     # -------------------------------------------------------------------------
     elif model_tab == "B. Latent Class Analysis":
-        st.subheader("Model B: Latent Class Analysis (LCA)")
+        st.subheader("Model B: Latent Class Analysis (LCA) - The Probabilistic Approach")
 
         st.info("""
-        **Latent Class Analysis** is the gold standard for categorical survey data.
-        It assumes observed responses are independent conditional on latent class membership.
-
-        **Model:** P(Y) = Sum_k [pi_k * Product_j P(Y_j | C_k)]
-
-        Use BIC/AIC for model selection (lower = better).
+        **Latent Class Analysis** is a probabilistic model that assumes there are hidden "classes"
+        of poverty causing the observed data. It is the **gold standard** for categorical survey data.
         """)
+
+        with st.expander("The Doctor Analogy - Understanding LCA", expanded=True):
+            st.markdown("""
+            Think of this like a **doctor diagnosing a flu**. The doctor doesn't see "The Flu";
+            they see fever, cough, and fatigue.
+
+            - **Symptoms** = Our Variables (Income < PGK, No Internet, etc.)
+            - **The Disease** = The Latent Class (e.g., "Hardcore Poor" vs. "Situational Poor")
+
+            ---
+
+            **Why LCA is Best for Zakat:**
+
+            1. It gives us a **Probability of Membership**. It won't just say "You are Poor."
+               It will say "There is a 95% chance this household belongs to the Hardcore Poor group."
+
+            2. This helps with **Borderline Cases** (e.g., a family with 45% probability).
+               In Zakat, we often want to give the benefit of the doubt to these borderline cases;
+               LCA lets us see them.
+
+            **Model:** P(Y) = Sum_k [pi_k * Product_j P(Y_j | C_k)]
+
+            Use BIC/AIC for model selection (lower = better).
+            """)
 
         col1, col2 = st.columns([1, 2])
 
@@ -1006,13 +1260,42 @@ elif phase == "Phase 3: Clustering Models":
 # PHASE 4: VALIDATION
 # =============================================================================
 elif phase == "Phase 4: Validation":
-    st.title("Phase 4: Evaluation & Benchmarking Strategy")
-    st.caption("Internal validation, stability analysis, and external profiling")
+    st.title("Phase 4: The 'Adl Check - Maqasid Syariah Validation")
+    st.caption("Ensuring justice in Zakat distribution through rigorous validation")
 
     # Get binary data
     binary_cols = [col for col in ALL_INDICATORS if col in df.columns]
     X_binary = binarize_dataframe(df, binary_cols)
     X_array = X_binary.values.astype(float)
+
+    st.info("""
+    Our dataset uniquely includes **Maqasid Syariah** indicators:
+    *Pemeliharaan Agama* (Religion), *Nyawa* (Life), *Akal* (Intellect),
+    *Keturunan* (Lineage), *Harta* (Property).
+
+    This phase validates the clusters and determines **tailored Zakat interventions**.
+    """)
+
+    with st.expander("Why Maqasid Profiling Matters", expanded=False):
+        st.markdown("""
+        **The Experiment: Supervised Profiling**
+
+        1. **Cluster Interpretation:** We look at "Cluster 1."
+        2. **Maqasid Check:** Does Cluster 1 suffer predominantly in *Nyawa* (Life/Health) and *Harta* (Wealth)?
+           - **Zakat Action:** This group needs immediate cash (*Wang Zakat*) and medical aid.
+
+        3. **Maqasid Check:** Does Cluster 2 suffer predominantly in *Akal* (Intellect/Education) and *Keturunan* (Lineage/Social)?
+           - **Zakat Action:** Cash won't solve this long-term. This group needs *Bantuan Pendidikan* (Scholarships) or vocational training.
+
+        ---
+
+        **Data-Based Reasoning:**
+
+        If we ignore this distinction and just give cash to everyone, we fail the goal of Zakat,
+        which is to move them from *Mustahiq* (receiver) to *Muzakki* (payer).
+
+        By clustering based on the *type* of deprivation, we **tailor the intervention**.
+        """)
 
     # Select model for validation
     available_models = {}
@@ -1175,11 +1458,30 @@ elif phase == "Phase 4: Validation":
 
     # -------------------------------------------------------------------------
     elif validation_tab == "Cluster Profiles":
-        st.subheader("MPI Profile Heatmap (Faces of Poverty)")
+        st.subheader("MPI Profile Heatmap - Faces of Poverty and Zakat Recommendations")
 
         st.info("""
         **Item Response Probabilities** show P(Deprived | Cluster).
         **Relative Risk Ratios** compare cluster rates to population average.
+
+        Based on the Maqasid Syariah framework, we identify **tailored Zakat interventions** for each cluster.
+        """)
+
+        with st.expander("Expected Poverty Archetypes and Interventions", expanded=False):
+            st.markdown("""
+            | Archetype | Maqasid Deficit | Recommended Zakat Intervention |
+            |-----------|-----------------|--------------------------------|
+            | **Deeply Deprived** | All Maqasid | Immediate cash (*Wang Zakat*) + comprehensive support |
+            | **Infrastructure Poor** | *Nyawa* (Life), *Harta* (Wealth) | Housing assistance, utilities support |
+            | **Digital Excluded** | *Akal* (Intellect) | ICT training, device provision |
+            | **Education Deficit** | *Akal* (Intellect), *Keturunan* (Lineage) | *Bantuan Pendidikan* (Scholarships), vocational training |
+            | **Near Average** | Minimal | Preventive support, monitoring |
+            """)
+
+        st.markdown("""
+        **Viewing the heatmaps below:**
+        - **Red/Orange cells** = High deprivation probability (needs intervention)
+        - **White/Light cells** = Low deprivation probability (protected)
 
         Expected archetypes:
         1. **Deeply Deprived**: High across all indicators
