@@ -854,7 +854,7 @@ elif phase == "Phase 3: Clustering Models":
     # Model selection
     model_tab = st.radio(
         "Select Model",
-        ["A. K-Modes", "B. Latent Class Analysis", "C. Hierarchical + MCA", "D. Model Comparison"],
+        ["A. K-Modes", "B. Latent Class Analysis", "C. Hierarchical + MCA", "D. Model Comparison", "E. AutoML Optimizer"],
         horizontal=True,
         label_visibility="collapsed"
     )
@@ -1256,6 +1256,880 @@ elif phase == "Phase 3: Clustering Models":
                 best_model = comp_df.loc[comp_df['Silhouette (Jaccard)'].idxmax(), 'Model']
                 st.success(f"**Recommended Model:** {best_model} (highest Silhouette with Jaccard distance)")
 
+    # -------------------------------------------------------------------------
+    elif model_tab == "E. AutoML Optimizer":
+        st.subheader("Zakat AutoML Engine - Genetic Algorithm Optimizer")
+
+        st.info("""
+        **The Zakat AutoML Engine** uses a Genetic Algorithm (GA) to automatically discover
+        the optimal clustering configuration. Instead of manually testing different models,
+        K values, and feature subsets, the GA evolves toward the best solution.
+        """)
+
+        with st.expander("How the Genetic Algorithm Works", expanded=True):
+            st.markdown("""
+            #### The DNA of a Clustering Solution
+
+            Each "individual" in the population is a complete clustering configuration encoded as:
+
+            | Gene | Description | Values |
+            |------|-------------|--------|
+            | **Model Type** | Which algorithm | 0 = K-Modes, 1 = LCA |
+            | **K** | Number of clusters | 2-15 |
+            | **Feature Mask** | Which variables to use | Binary string (e.g., `11010...`) |
+
+            ---
+
+            #### The Zakat Effectiveness Score (ZES)
+
+            The fitness function measures how "good" a clustering is for Zakat distribution:
+
+            **ZES = w1*Silhouette_Jaccard + w2*Stability + w3*Balance + w4*MaqasidSeparation**
+
+            - **Silhouette (Jaccard):** Cluster quality using appropriate distance
+            - **Stability:** How consistent are clusters across bootstraps
+            - **Balance:** Penalize solutions with tiny or dominant clusters
+            - **Maqasid Separation:** Do clusters differentiate on Maqasid indicators?
+
+            ---
+
+            #### Evolution Process
+
+            1. **Initialize:** Create 50 random clustering configurations
+            2. **Evaluate:** Calculate ZES for each configuration
+            3. **Select:** Keep top 10 performers (elite selection)
+            4. **Crossover:** Combine genes from top performers
+            5. **Mutate:** Random changes to explore new configurations
+            6. **Repeat:** Run for 10-20 generations
+            """)
+
+        st.divider()
+
+        # =================================================================
+        # GENETIC ALGORITHM IMPLEMENTATION
+        # =================================================================
+
+        import random
+        import time
+        from copy import deepcopy
+
+        class ZakatGeneticOptimizer:
+            """Genetic Algorithm for optimizing Zakat clustering configurations."""
+
+            def __init__(self, X, feature_names, maqasid_indices=None):
+                self.X = X
+                self.feature_names = feature_names
+                self.n_features = len(feature_names)
+                self.maqasid_indices = maqasid_indices or []
+                self.history = []
+
+            def _encode_chromosome(self, model_type, k, feature_mask):
+                """Encode a clustering configuration as a chromosome."""
+                return {
+                    'model_type': model_type,  # 0 = K-Modes, 1 = LCA
+                    'k': k,
+                    'feature_mask': feature_mask  # List of 0/1
+                }
+
+            def _decode_chromosome(self, chrom):
+                """Decode chromosome back to configuration."""
+                return chrom['model_type'], chrom['k'], chrom['feature_mask']
+
+            def _random_chromosome(self, k_min=2, k_max=10, min_features=5):
+                """Generate a random chromosome."""
+                model_type = random.randint(0, 1)
+                k = random.randint(k_min, k_max)
+                # Random feature mask with at least min_features
+                feature_mask = [random.randint(0, 1) for _ in range(self.n_features)]
+                while sum(feature_mask) < min_features:
+                    idx = random.randint(0, self.n_features - 1)
+                    feature_mask[idx] = 1
+                return self._encode_chromosome(model_type, k, feature_mask)
+
+            def _fitness(self, chrom, w1=0.35, w2=0.25, w3=0.20, w4=0.20, n_bootstrap=5):
+                """Calculate Zakat Effectiveness Score (ZES)."""
+                model_type, k, feature_mask = self._decode_chromosome(chrom)
+
+                # Get selected features
+                selected_idx = [i for i, m in enumerate(feature_mask) if m == 1]
+                if len(selected_idx) < 3:
+                    return 0.0, {}  # Invalid configuration
+
+                X_subset = self.X[:, selected_idx]
+
+                try:
+                    # Fit model
+                    if model_type == 0:  # K-Modes
+                        model = KModesModel()
+                        model.set_params(n_clusters=k, n_init=3)
+                        labels = model.fit_predict(X_subset)
+                    else:  # LCA
+                        model = LatentClassModel()
+                        model.set_params(n_classes=k, max_iter=50, n_init=3)
+                        labels = model.fit_predict(X_subset)
+
+                    # Component 1: Silhouette with Jaccard
+                    try:
+                        dist_matrix = compute_distance_matrix(X_subset, 'jaccard')
+                        silhouette = silhouette_score(dist_matrix, labels, metric='precomputed')
+                        silhouette = max(0, (silhouette + 1) / 2)  # Normalize to 0-1
+                    except:
+                        silhouette = 0.0
+
+                    # Component 2: Stability (quick bootstrap)
+                    ari_values = []
+                    for _ in range(n_bootstrap):
+                        boot_idx = np.random.choice(len(X_subset), size=int(0.8 * len(X_subset)), replace=True)
+                        X_boot = X_subset[boot_idx]
+                        try:
+                            if model_type == 0:
+                                boot_model = KModesModel()
+                                boot_model.set_params(n_clusters=k, n_init=2)
+                                boot_labels = boot_model.fit_predict(X_boot)
+                            else:
+                                boot_model = LatentClassModel()
+                                boot_model.set_params(n_classes=k, max_iter=30, n_init=2)
+                                boot_labels = boot_model.fit_predict(X_boot)
+                            # Compare with original on same samples
+                            orig_labels = labels[boot_idx]
+                            ari = adjusted_rand_score(orig_labels, boot_labels)
+                            ari_values.append(max(0, ari))
+                        except:
+                            pass
+                    stability = np.mean(ari_values) if ari_values else 0.0
+
+                    # Component 3: Balance (penalize imbalanced clusters)
+                    cluster_sizes = np.bincount(labels)
+                    min_ratio = cluster_sizes.min() / cluster_sizes.max()
+                    balance = min_ratio  # Higher is better (0-1 range)
+
+                    # Component 4: Maqasid Separation
+                    maqasid_sep = 0.0
+                    if self.maqasid_indices:
+                        maq_selected = [i for i in range(len(selected_idx))
+                                       if selected_idx[i] in self.maqasid_indices]
+                        if len(maq_selected) >= 2:
+                            # Measure variance in Maqasid deprivation across clusters
+                            maq_rates = []
+                            for cl in np.unique(labels):
+                                mask = labels == cl
+                                if mask.sum() > 0 and len(maq_selected) > 0:
+                                    cl_maq_rate = X_subset[mask][:, maq_selected].mean()
+                                    maq_rates.append(cl_maq_rate)
+                            if len(maq_rates) > 1:
+                                maqasid_sep = np.std(maq_rates) * 2  # Normalize
+                                maqasid_sep = min(1.0, maqasid_sep)
+
+                    # Calculate ZES
+                    zes = w1 * silhouette + w2 * stability + w3 * balance + w4 * maqasid_sep
+
+                    metrics = {
+                        'silhouette': silhouette,
+                        'stability': stability,
+                        'balance': balance,
+                        'maqasid_sep': maqasid_sep,
+                        'zes': zes,
+                        'n_features': len(selected_idx),
+                        'model': 'K-Modes' if model_type == 0 else 'LCA',
+                        'k': k,
+                        'labels': labels
+                    }
+
+                    return zes, metrics
+
+                except Exception as e:
+                    return 0.0, {'error': str(e)}
+
+            def _crossover(self, parent1, parent2):
+                """Single-point crossover for chromosomes."""
+                child = {}
+
+                # Model type from random parent
+                child['model_type'] = random.choice([parent1['model_type'], parent2['model_type']])
+
+                # K: average or random parent
+                if random.random() < 0.5:
+                    child['k'] = (parent1['k'] + parent2['k']) // 2
+                else:
+                    child['k'] = random.choice([parent1['k'], parent2['k']])
+
+                # Feature mask: crossover point
+                crossover_point = random.randint(1, self.n_features - 1)
+                child['feature_mask'] = (parent1['feature_mask'][:crossover_point] +
+                                        parent2['feature_mask'][crossover_point:])
+
+                return child
+
+            def _mutate(self, chrom, mutation_rate=0.1):
+                """Apply random mutations to chromosome."""
+                mutated = deepcopy(chrom)
+
+                # Mutate model type
+                if random.random() < mutation_rate:
+                    mutated['model_type'] = 1 - mutated['model_type']
+
+                # Mutate K
+                if random.random() < mutation_rate:
+                    mutated['k'] = max(2, min(15, mutated['k'] + random.randint(-2, 2)))
+
+                # Mutate feature mask
+                for i in range(len(mutated['feature_mask'])):
+                    if random.random() < mutation_rate:
+                        mutated['feature_mask'][i] = 1 - mutated['feature_mask'][i]
+
+                # Ensure minimum features
+                while sum(mutated['feature_mask']) < 3:
+                    idx = random.randint(0, len(mutated['feature_mask']) - 1)
+                    mutated['feature_mask'][idx] = 1
+
+                return mutated
+
+            def evolve(self, population_size=30, n_generations=10, elite_size=5,
+                      mutation_rate=0.15, k_min=2, k_max=10, progress_callback=None):
+                """Run the genetic algorithm."""
+
+                # Initialize population
+                population = [self._random_chromosome(k_min, k_max)
+                             for _ in range(population_size)]
+
+                best_overall = None
+                best_fitness = 0.0
+                self.history = []
+
+                for gen in range(n_generations):
+                    # Evaluate fitness
+                    fitness_scores = []
+                    for chrom in population:
+                        score, metrics = self._fitness(chrom)
+                        fitness_scores.append((score, chrom, metrics))
+
+                    # Sort by fitness
+                    fitness_scores.sort(key=lambda x: x[0], reverse=True)
+
+                    # Record best of generation
+                    gen_best = fitness_scores[0]
+                    self.history.append({
+                        'generation': gen + 1,
+                        'best_fitness': gen_best[0],
+                        'avg_fitness': np.mean([f[0] for f in fitness_scores]),
+                        'best_config': gen_best[2]
+                    })
+
+                    # Update overall best
+                    if gen_best[0] > best_fitness:
+                        best_fitness = gen_best[0]
+                        best_overall = gen_best
+
+                    # Progress callback
+                    if progress_callback:
+                        progress_callback(gen + 1, n_generations, gen_best[0], gen_best[2])
+
+                    # Selection: keep elite
+                    elite = [f[1] for f in fitness_scores[:elite_size]]
+
+                    # Create new population
+                    new_population = list(elite)  # Keep elite
+
+                    # Fill rest with offspring
+                    while len(new_population) < population_size:
+                        parent1 = random.choice(elite)
+                        parent2 = random.choice(elite)
+                        child = self._crossover(parent1, parent2)
+                        child = self._mutate(child, mutation_rate)
+                        new_population.append(child)
+
+                    population = new_population
+
+                return best_overall, self.history
+
+        # =================================================================
+        # STREAMLIT UI - CONTROL ROOM
+        # =================================================================
+
+        st.markdown("### Control Room")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown("#### Population Settings")
+            pop_size = st.slider("Population Size", 10, 100, 30,
+                                help="Number of candidate solutions per generation")
+            n_generations = st.slider("Generations", 5, 30, 10,
+                                     help="Number of evolution cycles")
+            elite_size = st.slider("Elite Size", 3, 15, 5,
+                                  help="Top performers kept each generation")
+
+        with col2:
+            st.markdown("#### Search Space")
+            k_min, k_max = st.slider("K Range", 2, 15, (2, 8),
+                                    help="Range of cluster numbers to explore")
+            mutation_rate = st.slider("Mutation Rate", 0.05, 0.30, 0.15,
+                                     help="Probability of random gene changes")
+
+        with col3:
+            st.markdown("#### Fitness Weights")
+            w_silhouette = st.slider("Silhouette Weight", 0.0, 1.0, 0.35)
+            w_stability = st.slider("Stability Weight", 0.0, 1.0, 0.25)
+            w_balance = st.slider("Balance Weight", 0.0, 1.0, 0.20)
+            w_maqasid = st.slider("Maqasid Weight", 0.0, 1.0, 0.20)
+
+        # Normalize weights
+        total_w = w_silhouette + w_stability + w_balance + w_maqasid
+        if total_w > 0:
+            w_silhouette /= total_w
+            w_stability /= total_w
+            w_balance /= total_w
+            w_maqasid /= total_w
+
+        st.divider()
+
+        # =================================================================
+        # RUN OPTIMIZATION
+        # =================================================================
+
+        run_automl = st.button("Start Evolution", type="primary", use_container_width=True)
+
+        if run_automl:
+            st.markdown("### Live Evolution Dashboard")
+
+            # Find Maqasid indices
+            maqasid_cols = FEATURE_GROUPS.get('Maqasid Syariah', [])
+            maqasid_indices = [i for i, col in enumerate(binary_cols) if col in maqasid_cols]
+
+            # =================================================================
+            # DETAILED PROGRESS UI LAYOUT
+            # =================================================================
+
+            # Top status bar
+            status_header = st.empty()
+
+            # Main progress
+            col_prog1, col_prog2 = st.columns([3, 1])
+            with col_prog1:
+                progress_bar = st.progress(0)
+            with col_prog2:
+                time_display = st.empty()
+
+            st.divider()
+
+            # Two-column layout for detailed progress
+            col_left, col_right = st.columns([1, 1])
+
+            with col_left:
+                st.markdown("#### Generation Details")
+                gen_status = st.empty()
+                st.markdown("#### Current Best Configuration")
+                best_config_display = st.empty()
+                st.markdown("#### Fitness Components")
+                fitness_components = st.empty()
+
+            with col_right:
+                st.markdown("#### Population Evaluation Log")
+                eval_log_container = st.container(height=400)
+                eval_log = eval_log_container.empty()
+
+            st.divider()
+
+            # Bottom section - charts and top performers
+            chart_col, top_col = st.columns([2, 1])
+
+            with chart_col:
+                st.markdown("#### Evolution Progress")
+                chart_placeholder = st.empty()
+
+            with top_col:
+                st.markdown("#### Top 5 This Generation")
+                top_performers = st.empty()
+
+            st.divider()
+
+            # Detailed operations log
+            st.markdown("#### Genetic Operations Log")
+            ops_log_container = st.container(height=200)
+            ops_log = ops_log_container.empty()
+
+            # =================================================================
+            # ENHANCED OPTIMIZER WITH DETAILED CALLBACKS
+            # =================================================================
+
+            class DetailedZakatOptimizer(ZakatGeneticOptimizer):
+                """Enhanced optimizer with detailed progress reporting."""
+
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    self.eval_logs = []
+                    self.ops_logs = []
+                    self.generation_stats = []
+                    self.start_time = None
+
+                def evolve_detailed(self, population_size=30, n_generations=10, elite_size=5,
+                                   mutation_rate=0.15, k_min=2, k_max=10,
+                                   ui_callbacks=None):
+                    """Run GA with detailed UI updates."""
+
+                    self.start_time = time.time()
+                    self.eval_logs = []
+                    self.ops_logs = []
+
+                    # Initialize population
+                    self._log_op("INIT", f"Creating initial population of {population_size} chromosomes...")
+                    population = []
+                    for i in range(population_size):
+                        chrom = self._random_chromosome(k_min, k_max)
+                        population.append(chrom)
+                        model_type = "K-Modes" if chrom['model_type'] == 0 else "LCA"
+                        n_feat = sum(chrom['feature_mask'])
+                        self._log_op("INIT", f"  Chromosome #{i+1}: {model_type}, K={chrom['k']}, Features={n_feat}")
+
+                    if ui_callbacks:
+                        ui_callbacks['update_ops_log'](self.ops_logs)
+
+                    best_overall = None
+                    best_fitness = 0.0
+                    self.history = []
+
+                    for gen in range(n_generations):
+                        gen_start = time.time()
+                        self.eval_logs = []  # Reset per generation
+
+                        self._log_op("GEN", f"=== GENERATION {gen+1}/{n_generations} ===")
+
+                        # Update generation status
+                        if ui_callbacks:
+                            elapsed = time.time() - self.start_time
+                            ui_callbacks['update_status'](gen + 1, n_generations, elapsed)
+
+                        # Evaluate fitness for each chromosome
+                        self._log_op("EVAL", f"Evaluating {len(population)} chromosomes...")
+                        fitness_scores = []
+
+                        for idx, chrom in enumerate(population):
+                            eval_start = time.time()
+                            score, metrics = self._fitness(chrom,
+                                                          w1=ui_callbacks.get('weights', {}).get('w1', 0.35),
+                                                          w2=ui_callbacks.get('weights', {}).get('w2', 0.25),
+                                                          w3=ui_callbacks.get('weights', {}).get('w3', 0.20),
+                                                          w4=ui_callbacks.get('weights', {}).get('w4', 0.20))
+                            eval_time = time.time() - eval_start
+
+                            model_type = "K-Modes" if chrom['model_type'] == 0 else "LCA"
+                            n_feat = sum(chrom['feature_mask'])
+
+                            # Detailed eval log entry
+                            log_entry = {
+                                'idx': idx + 1,
+                                'model': model_type,
+                                'k': chrom['k'],
+                                'features': n_feat,
+                                'zes': score,
+                                'sil': metrics.get('silhouette', 0),
+                                'stab': metrics.get('stability', 0),
+                                'bal': metrics.get('balance', 0),
+                                'maq': metrics.get('maqasid_sep', 0),
+                                'time': eval_time
+                            }
+                            self.eval_logs.append(log_entry)
+                            fitness_scores.append((score, chrom, metrics))
+
+                            # Update UI every 3 evaluations or on last one
+                            if ui_callbacks and (idx % 3 == 0 or idx == len(population) - 1):
+                                ui_callbacks['update_eval_log'](self.eval_logs, idx + 1, len(population))
+                                # Update progress within generation
+                                gen_progress = (gen + (idx + 1) / len(population)) / n_generations
+                                ui_callbacks['update_progress'](gen_progress)
+
+                        # Sort by fitness
+                        fitness_scores.sort(key=lambda x: x[0], reverse=True)
+
+                        # Generation statistics
+                        gen_fitness = [f[0] for f in fitness_scores]
+                        gen_stats = {
+                            'gen': gen + 1,
+                            'best': max(gen_fitness),
+                            'worst': min(gen_fitness),
+                            'avg': np.mean(gen_fitness),
+                            'std': np.std(gen_fitness),
+                            'time': time.time() - gen_start
+                        }
+                        self.generation_stats.append(gen_stats)
+
+                        self._log_op("STATS", f"Gen {gen+1} Stats: Best={gen_stats['best']:.4f}, Avg={gen_stats['avg']:.4f}, Worst={gen_stats['worst']:.4f}")
+
+                        # Record best of generation
+                        gen_best = fitness_scores[0]
+                        self.history.append({
+                            'generation': gen + 1,
+                            'best_fitness': gen_best[0],
+                            'avg_fitness': gen_stats['avg'],
+                            'std_fitness': gen_stats['std'],
+                            'best_config': gen_best[2]
+                        })
+
+                        # Update overall best
+                        if gen_best[0] > best_fitness:
+                            best_fitness = gen_best[0]
+                            best_overall = gen_best
+                            self._log_op("BEST", f"NEW BEST FOUND! ZES={best_fitness:.4f}")
+
+                        # Update UI with generation results
+                        if ui_callbacks:
+                            ui_callbacks['update_gen_complete'](
+                                gen + 1, gen_stats, gen_best,
+                                fitness_scores[:5], self.history
+                            )
+
+                        # SELECTION
+                        self._log_op("SELECT", f"Selecting top {elite_size} elite chromosomes...")
+                        elite = []
+                        for i, (score, chrom, metrics) in enumerate(fitness_scores[:elite_size]):
+                            elite.append(chrom)
+                            model_type = "K-Modes" if chrom['model_type'] == 0 else "LCA"
+                            self._log_op("SELECT", f"  Elite #{i+1}: {model_type}, K={chrom['k']}, ZES={score:.4f}")
+
+                        # Create new population
+                        new_population = list(elite)  # Keep elite
+
+                        # CROSSOVER & MUTATION
+                        self._log_op("BREED", f"Creating {population_size - elite_size} offspring...")
+                        offspring_count = 0
+
+                        while len(new_population) < population_size:
+                            # Select parents
+                            p1_idx = random.randint(0, elite_size - 1)
+                            p2_idx = random.randint(0, elite_size - 1)
+                            parent1 = elite[p1_idx]
+                            parent2 = elite[p2_idx]
+
+                            # Crossover
+                            child = self._crossover(parent1, parent2)
+                            p1_model = "KM" if parent1['model_type'] == 0 else "LCA"
+                            p2_model = "KM" if parent2['model_type'] == 0 else "LCA"
+                            c_model = "KM" if child['model_type'] == 0 else "LCA"
+
+                            crossover_log = f"  P1({p1_model},K={parent1['k']}) x P2({p2_model},K={parent2['k']}) -> Child({c_model},K={child['k']})"
+
+                            # Mutation
+                            old_model = child['model_type']
+                            old_k = child['k']
+                            old_feat = sum(child['feature_mask'])
+
+                            child = self._mutate(child, mutation_rate)
+
+                            new_model = child['model_type']
+                            new_k = child['k']
+                            new_feat = sum(child['feature_mask'])
+
+                            mutations = []
+                            if old_model != new_model:
+                                mutations.append(f"Model: {'KM' if old_model == 0 else 'LCA'}->{'KM' if new_model == 0 else 'LCA'}")
+                            if old_k != new_k:
+                                mutations.append(f"K: {old_k}->{new_k}")
+                            if old_feat != new_feat:
+                                mutations.append(f"Feat: {old_feat}->{new_feat}")
+
+                            if mutations:
+                                self._log_op("MUTATE", crossover_log + f" | Mutations: {', '.join(mutations)}")
+                            else:
+                                self._log_op("CROSS", crossover_log)
+
+                            new_population.append(child)
+                            offspring_count += 1
+
+                        population = new_population
+
+                        # Update ops log
+                        if ui_callbacks:
+                            ui_callbacks['update_ops_log'](self.ops_logs[-20:])  # Keep last 20
+
+                    return best_overall, self.history
+
+                def _log_op(self, op_type, message):
+                    """Log a genetic operation."""
+                    timestamp = time.time() - self.start_time if self.start_time else 0
+                    self.ops_logs.append({
+                        'time': timestamp,
+                        'type': op_type,
+                        'message': message
+                    })
+
+            # =================================================================
+            # UI UPDATE FUNCTIONS
+            # =================================================================
+
+            gen_history = []
+            fitness_history = []
+            avg_fitness_history = []
+
+            def update_status(gen, total, elapsed):
+                mins = int(elapsed // 60)
+                secs = int(elapsed % 60)
+                status_header.markdown(f"""
+                ### Generation {gen} / {total}
+                """)
+                time_display.markdown(f"**Elapsed:** {mins}m {secs}s")
+
+            def update_progress(progress):
+                progress_bar.progress(min(progress, 1.0))
+
+            def update_eval_log(logs, current, total):
+                # Create a formatted table of evaluations
+                if logs:
+                    log_text = f"**Evaluating: {current}/{total}**\n\n"
+                    log_text += "| # | Model | K | Feat | ZES | Sil | Stab | Bal | Maq | Time |\n"
+                    log_text += "|---|-------|---|------|-----|-----|------|-----|-----|------|\n"
+
+                    # Show last 12 entries
+                    for entry in logs[-12:]:
+                        log_text += f"| {entry['idx']} | {entry['model']} | {entry['k']} | {entry['features']} | "
+                        log_text += f"**{entry['zes']:.3f}** | {entry['sil']:.2f} | {entry['stab']:.2f} | "
+                        log_text += f"{entry['bal']:.2f} | {entry['maq']:.2f} | {entry['time']:.1f}s |\n"
+
+                    eval_log.markdown(log_text)
+
+            def update_gen_complete(gen, stats, best, top5, history):
+                # Update generation status
+                gen_status.markdown(f"""
+                | Metric | Value |
+                |--------|-------|
+                | **Generation** | {gen} |
+                | **Best ZES** | {stats['best']:.4f} |
+                | **Average ZES** | {stats['avg']:.4f} |
+                | **Std Dev** | {stats['std']:.4f} |
+                | **Worst ZES** | {stats['worst']:.4f} |
+                | **Gen Time** | {stats['time']:.1f}s |
+                """)
+
+                # Update best config display
+                best_metrics = best[2]
+                best_chrom = best[1]
+                selected_feat_names = [get_short_name(binary_cols[i])
+                                      for i, m in enumerate(best_chrom['feature_mask']) if m == 1]
+
+                best_config_display.markdown(f"""
+                **Model:** {best_metrics.get('model', 'N/A')}
+                **Clusters (K):** {best_metrics.get('k', 'N/A')}
+                **Features:** {best_metrics.get('n_features', 'N/A')}/{len(binary_cols)}
+
+                **Selected Features:**
+                {', '.join(selected_feat_names[:8])}{'...' if len(selected_feat_names) > 8 else ''}
+                """)
+
+                # Update fitness components
+                fitness_components.markdown(f"""
+                | Component | Score | Weight | Contribution |
+                |-----------|-------|--------|--------------|
+                | Silhouette | {best_metrics.get('silhouette', 0):.3f} | {w_silhouette:.2f} | {best_metrics.get('silhouette', 0) * w_silhouette:.3f} |
+                | Stability | {best_metrics.get('stability', 0):.3f} | {w_stability:.2f} | {best_metrics.get('stability', 0) * w_stability:.3f} |
+                | Balance | {best_metrics.get('balance', 0):.3f} | {w_balance:.2f} | {best_metrics.get('balance', 0) * w_balance:.3f} |
+                | Maqasid Sep. | {best_metrics.get('maqasid_sep', 0):.3f} | {w_maqasid:.2f} | {best_metrics.get('maqasid_sep', 0) * w_maqasid:.3f} |
+                | **TOTAL ZES** | | | **{best_metrics.get('zes', 0):.4f}** |
+                """)
+
+                # Update top 5 performers
+                top5_text = ""
+                for i, (score, chrom, metrics) in enumerate(top5):
+                    model = "K-Modes" if chrom['model_type'] == 0 else "LCA"
+                    medal = ["1st", "2nd", "3rd", "4th", "5th"][i]
+                    top5_text += f"**{medal}:** {model}, K={chrom['k']}, F={sum(chrom['feature_mask'])}, ZES={score:.4f}\n\n"
+                top_performers.markdown(top5_text)
+
+                # Update chart
+                gen_history.append(gen)
+                fitness_history.append(stats['best'])
+                avg_fitness_history.append(stats['avg'])
+
+                if len(gen_history) > 1:
+                    chart_df = pd.DataFrame({
+                        'Generation': gen_history + gen_history,
+                        'ZES': fitness_history + avg_fitness_history,
+                        'Type': ['Best'] * len(gen_history) + ['Average'] * len(gen_history)
+                    })
+                    fig = px.line(chart_df, x='Generation', y='ZES', color='Type',
+                                 title='Fitness Evolution',
+                                 markers=True)
+                    fig.update_layout(height=300)
+                    chart_placeholder.plotly_chart(fig, use_container_width=True)
+
+            def update_ops_log(logs):
+                if logs:
+                    log_text = ""
+                    for entry in logs[-15:]:
+                        time_str = f"{entry['time']:.1f}s"
+                        type_icon = {
+                            'INIT': '[INIT]',
+                            'GEN': '[GEN]',
+                            'EVAL': '[EVAL]',
+                            'STATS': '[STATS]',
+                            'BEST': '[BEST]',
+                            'SELECT': '[SELECT]',
+                            'BREED': '[BREED]',
+                            'CROSS': '[CROSS]',
+                            'MUTATE': '[MUTATE]'
+                        }.get(entry['type'], '[???]')
+                        log_text += f"`{time_str}` **{type_icon}** {entry['message']}\n\n"
+                    ops_log.markdown(log_text)
+
+            # =================================================================
+            # RUN THE OPTIMIZER
+            # =================================================================
+
+            optimizer = DetailedZakatOptimizer(
+                X_array,
+                binary_cols,
+                maqasid_indices=maqasid_indices
+            )
+
+            ui_callbacks = {
+                'update_status': update_status,
+                'update_progress': update_progress,
+                'update_eval_log': update_eval_log,
+                'update_gen_complete': update_gen_complete,
+                'update_ops_log': update_ops_log,
+                'weights': {
+                    'w1': w_silhouette,
+                    'w2': w_stability,
+                    'w3': w_balance,
+                    'w4': w_maqasid
+                }
+            }
+
+            best_result, history = optimizer.evolve_detailed(
+                population_size=pop_size,
+                n_generations=n_generations,
+                elite_size=elite_size,
+                mutation_rate=mutation_rate,
+                k_min=k_min,
+                k_max=k_max,
+                ui_callbacks=ui_callbacks
+            )
+
+            progress_bar.progress(1.0)
+            status_header.success("### Evolution Complete!")
+
+            # =================================================================
+            # RESULTS PANEL
+            # =================================================================
+
+            st.divider()
+            st.markdown("### Optimal Configuration Found")
+
+            if best_result and best_result[2]:
+                best_metrics = best_result[2]
+                best_chrom = best_result[1]
+
+                col1, col2 = st.columns([1, 2])
+
+                with col1:
+                    st.markdown("#### Best Configuration")
+                    st.metric("Zakat Effectiveness Score", f"{best_metrics.get('zes', 0):.4f}")
+                    st.markdown(f"""
+                    - **Model:** {best_metrics.get('model', 'N/A')}
+                    - **K (Clusters):** {best_metrics.get('k', 'N/A')}
+                    - **Features Used:** {best_metrics.get('n_features', 'N/A')} / {len(binary_cols)}
+                    """)
+
+                    # Show selected features
+                    st.markdown("#### Selected Features")
+                    selected_features = [binary_cols[i] for i, m in enumerate(best_chrom['feature_mask']) if m == 1]
+                    for feat in selected_features:
+                        st.write(f"- {get_short_name(feat)}")
+
+                with col2:
+                    st.markdown("#### Component Scores")
+
+                    scores_df = pd.DataFrame({
+                        'Component': ['Silhouette (Jaccard)', 'Stability (ARI)', 'Balance', 'Maqasid Separation'],
+                        'Score': [
+                            best_metrics.get('silhouette', 0),
+                            best_metrics.get('stability', 0),
+                            best_metrics.get('balance', 0),
+                            best_metrics.get('maqasid_sep', 0)
+                        ],
+                        'Weight': [w_silhouette, w_stability, w_balance, w_maqasid],
+                        'Contribution': [
+                            best_metrics.get('silhouette', 0) * w_silhouette,
+                            best_metrics.get('stability', 0) * w_stability,
+                            best_metrics.get('balance', 0) * w_balance,
+                            best_metrics.get('maqasid_sep', 0) * w_maqasid
+                        ]
+                    })
+
+                    fig = px.bar(scores_df, x='Component', y='Score',
+                                title='Fitness Component Breakdown',
+                                color='Score', color_continuous_scale='Greens')
+                    fig.update_layout(height=350)
+                    st.plotly_chart(fig, use_container_width=True)
+
+                # Evolution history
+                st.markdown("#### Evolution History")
+
+                history_df = pd.DataFrame(history)
+                fig = px.line(history_df, x='generation', y='best_fitness',
+                             title='Best Fitness by Generation',
+                             markers=True,
+                             labels={'generation': 'Generation', 'best_fitness': 'Best ZES'})
+                fig.update_layout(height=300)
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Store best labels for use in validation
+                if 'labels' in best_metrics:
+                    st.session_state.automl_labels = best_metrics['labels']
+                    st.session_state.automl_config = {
+                        'model': best_metrics.get('model'),
+                        'k': best_metrics.get('k'),
+                        'features': selected_features,
+                        'zes': best_metrics.get('zes')
+                    }
+
+                    # Cluster distribution
+                    st.markdown("#### Cluster Distribution")
+                    labels = best_metrics['labels']
+                    sizes = pd.Series(labels).value_counts().sort_index()
+                    sizes_df = pd.DataFrame({
+                        'Cluster': [f'Cluster {k}' for k in sizes.index],
+                        'Count': sizes.values,
+                        'Proportion': (sizes.values / len(labels) * 100).round(1)
+                    })
+                    st.dataframe(sizes_df, use_container_width=True, hide_index=True)
+
+                    # Quick profile heatmap
+                    st.markdown("#### Quick Cluster Profile")
+
+                    # Get data for selected features only
+                    selected_idx = [i for i, m in enumerate(best_chrom['feature_mask']) if m == 1]
+                    X_selected = X_array[:, selected_idx]
+                    selected_short = [get_short_name(binary_cols[i]) for i in selected_idx]
+
+                    # Calculate item response probabilities
+                    n_clusters = len(np.unique(labels))
+                    irp_data = []
+                    for cl in range(n_clusters):
+                        mask = labels == cl
+                        irp_data.append(X_selected[mask].mean(axis=0))
+
+                    irp_df = pd.DataFrame(
+                        irp_data,
+                        index=[f'Cluster {i}' for i in range(n_clusters)],
+                        columns=selected_short
+                    )
+
+                    fig = px.imshow(
+                        irp_df,
+                        text_auto='.2f',
+                        color_continuous_scale='YlOrRd',
+                        aspect='auto',
+                        title='Item Response Probabilities (Optimized Configuration)'
+                    )
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    st.success("""
+                    **Results saved!** You can now proceed to Phase 4 (Validation) to validate
+                    this automatically optimized solution using Bootstrap Stability and Maqasid Profiling.
+                    """)
+            else:
+                st.error("Evolution did not find a valid solution. Try adjusting parameters.")
+
 # =============================================================================
 # PHASE 4: VALIDATION
 # =============================================================================
@@ -1305,6 +2179,10 @@ elif phase == "Phase 4: Validation":
         available_models['LCA'] = st.session_state.lca_labels
     if 'hac_labels' in st.session_state:
         available_models['HAC + MCA'] = st.session_state.hac_labels
+    if 'automl_labels' in st.session_state:
+        config = st.session_state.get('automl_config', {})
+        model_name = f"AutoML ({config.get('model', 'Optimized')}, K={config.get('k', '?')})"
+        available_models[model_name] = st.session_state.automl_labels
 
     if not available_models:
         st.warning("No clustering results available. Run models in Phase 3 first.")
@@ -1584,6 +2462,10 @@ elif phase == "Final Report":
         available_models['LCA'] = st.session_state.lca_labels
     if 'hac_labels' in st.session_state:
         available_models['HAC + MCA'] = st.session_state.hac_labels
+    if 'automl_labels' in st.session_state:
+        config = st.session_state.get('automl_config', {})
+        model_name = f"AutoML ({config.get('model', 'Optimized')}, K={config.get('k', '?')})"
+        available_models[model_name] = st.session_state.automl_labels
 
     if available_models:
         # Metrics comparison
